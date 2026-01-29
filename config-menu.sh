@@ -753,10 +753,10 @@ config_openai() {
     
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
-    if [ -n "$api_key" ]; then
-        backup_config
-        update_config_value "provider" "openai"
-        update_config_value "api_key" "$api_key"
+    if [ -z "$api_key" ]; then
+        log_error "API Key 不能为空"
+        press_enter
+        return
     fi
     
     echo ""
@@ -783,9 +783,6 @@ config_openai() {
         5) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" model ;;
         *) model="gpt-4o" ;;
     esac
-    
-    update_config_value "model" "$model"
-    [ -n "$base_url" ] && update_config_value "base_url" "$base_url"
     
     # 保存到 ClawdBot 环境变量配置
     save_clawdbot_ai_config "openai" "$api_key" "$model" "$base_url"
@@ -842,11 +839,6 @@ config_ollama() {
         *) model="llama3" ;;
     esac
     
-    backup_config
-    update_config_value "provider" "ollama"
-    update_config_value "base_url" "$ollama_url"
-    update_config_value "model" "$model"
-    update_config_value "api_key" ""
     
     # 保存到 ClawdBot 环境变量配置
     save_clawdbot_ai_config "ollama" "" "$model" "$ollama_url"
@@ -880,15 +872,11 @@ config_openrouter() {
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
     if [ -n "$api_key" ]; then
-        backup_config
-        update_config_value "provider" "openrouter"
-        update_config_value "api_key" "$api_key"
     fi
     
     echo ""
     read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
     base_url=${base_url:-"https://openrouter.ai/api/v1"}
-    update_config_value "base_url" "$base_url"
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
@@ -912,7 +900,6 @@ config_openrouter() {
         *) model="anthropic/claude-sonnet-4" ;;
     esac
     
-    update_config_value "model" "$model"
     
     # 保存到 ClawdBot 环境变量配置
     save_clawdbot_ai_config "openrouter" "$api_key" "$model" "$base_url"
@@ -945,9 +932,6 @@ config_google_gemini() {
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
     if [ -n "$api_key" ]; then
-        backup_config
-        update_config_value "provider" "google"
-        update_config_value "api_key" "$api_key"
     fi
     
     echo ""
@@ -973,8 +957,6 @@ config_google_gemini() {
         *) model="gemini-2.0-flash" ;;
     esac
     
-    update_config_value "model" "$model"
-    [ -n "$base_url" ] && update_config_value "base_url" "$base_url"
     
     # 保存到 ClawdBot 环境变量配置
     save_clawdbot_ai_config "google" "$api_key" "$model" "$base_url"
@@ -1014,12 +996,6 @@ config_azure_openai() {
     api_version=${api_version:-"2024-02-15-preview"}
     
     if [ -n "$azure_endpoint" ] && [ -n "$api_key" ] && [ -n "$deployment_name" ]; then
-        backup_config
-        update_config_value "provider" "azure"
-        update_config_value "base_url" "$azure_endpoint"
-        update_config_value "api_key" "$api_key"
-        update_config_value "model" "$deployment_name"
-        update_config_value "api_version" "$api_version"
         
         echo ""
         log_info "Azure OpenAI 配置完成！"
@@ -1047,15 +1023,11 @@ config_groq() {
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
     if [ -n "$api_key" ]; then
-        backup_config
-        update_config_value "provider" "groq"
-        update_config_value "api_key" "$api_key"
     fi
     
     echo ""
     read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
     base_url=${base_url:-"https://api.groq.com/openai/v1"}
-    update_config_value "base_url" "$base_url"
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
@@ -1079,7 +1051,6 @@ config_groq() {
         *) model="llama-3.3-70b-versatile" ;;
     esac
     
-    update_config_value "model" "$model"
     
     # 保存到 ClawdBot 环境变量配置
     save_clawdbot_ai_config "groq" "$api_key" "$model" "$base_url"
@@ -1112,15 +1083,11 @@ config_mistral() {
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
     if [ -n "$api_key" ]; then
-        backup_config
-        update_config_value "provider" "mistral"
-        update_config_value "api_key" "$api_key"
     fi
     
     echo ""
     read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
     base_url=${base_url:-"https://api.mistral.ai/v1"}
-    update_config_value "base_url" "$base_url"
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
@@ -1142,7 +1109,6 @@ config_mistral() {
         *) model="mistral-large-latest" ;;
     esac
     
-    update_config_value "model" "$model"
     
     # 保存到 ClawdBot 环境变量配置
     save_clawdbot_ai_config "mistral" "$api_key" "$model" "$base_url"
@@ -1215,27 +1181,8 @@ config_telegram() {
     read -p "$(echo -e "${YELLOW}输入你的 User ID: ${NC}")" user_id
     
     if [ -n "$bot_token" ] && [ -n "$user_id" ]; then
-        backup_config
         
-        # 添加 Telegram 配置到本地配置文件
-        if grep -q "telegram:" "$CONFIG_FILE"; then
-            log_warn "Telegram 配置已存在，将更新..."
-        else
-            cat >> "$CONFIG_FILE" << EOF
-
-# Telegram 配置
-telegram:
-  enabled: true
-  token: "$bot_token"
-  allowed_users:
-    - "$user_id"
-EOF
-        fi
-        
-        echo ""
-        log_info "本地配置文件已更新！"
-        
-        # 如果 ClawdBot 已安装，使用 clawdbot 命令配置
+        # 使用 clawdbot 命令配置
         if check_clawdbot_installed; then
             echo ""
             log_info "正在配置 ClawdBot Telegram 渠道..."
@@ -1267,9 +1214,7 @@ EOF
                 restart_gateway_for_channel
             fi
         else
-            echo ""
-            log_info "Bot Token: ${bot_token:0:10}..."
-            log_info "User ID: $user_id"
+            log_error "ClawdBot 未安装，请先安装 ClawdBot"
         fi
         
         # 询问是否测试
@@ -1306,26 +1251,8 @@ config_discord() {
     read -p "$(echo -e "${YELLOW}输入频道 ID: ${NC}")" channel_id
     
     if [ -n "$bot_token" ] && [ -n "$channel_id" ]; then
-        backup_config
         
-        if grep -q "discord:" "$CONFIG_FILE"; then
-            log_warn "Discord 配置已存在，将更新..."
-        else
-            cat >> "$CONFIG_FILE" << EOF
-
-# Discord 配置
-discord:
-  enabled: true
-  token: "$bot_token"
-  channels:
-    - "$channel_id"
-EOF
-        fi
-        
-        echo ""
-        log_info "本地配置文件已更新！"
-        
-        # 如果 ClawdBot 已安装，使用 clawdbot 命令配置
+        # 使用 clawdbot 命令配置
         if check_clawdbot_installed; then
             echo ""
             log_info "正在配置 ClawdBot Discord 渠道..."
@@ -1354,7 +1281,7 @@ EOF
                 restart_gateway_for_channel
             fi
         else
-            log_info "Discord 配置完成！"
+            log_error "ClawdBot 未安装，请先安装 ClawdBot"
         fi
         
         # 询问是否测试
@@ -1439,21 +1366,8 @@ config_slack() {
     read -p "$(echo -e "${YELLOW}输入 App Token (xapp-...): ${NC}")" app_token
     
     if [ -n "$bot_token" ] && [ -n "$app_token" ]; then
-        backup_config
         
-        cat >> "$CONFIG_FILE" << EOF
-
-# Slack 配置
-slack:
-  enabled: true
-  bot_token: "$bot_token"
-  app_token: "$app_token"
-EOF
-        
-        echo ""
-        log_info "本地配置文件已更新！"
-        
-        # 如果 ClawdBot 已安装，使用 clawdbot 命令配置
+        # 使用 clawdbot 命令配置
         if check_clawdbot_installed; then
             echo ""
             log_info "正在配置 ClawdBot Slack 渠道..."
@@ -1638,11 +1552,7 @@ config_identity() {
         personality+="$line\n"
     done
     
-    backup_config
     
-    [ -n "$bot_name" ] && update_config_value "bot_name" "$bot_name"
-    [ -n "$user_name" ] && update_config_value "user_name" "$user_name"
-    [ -n "$timezone" ] && update_config_value "timezone" "$timezone"
     
     echo ""
     log_info "身份配置已更新！"
@@ -1676,37 +1586,29 @@ config_security() {
     case $choice in
         1)
             if confirm "允许 ClawdBot 执行系统命令？这可能带来安全风险" "n"; then
-                update_config_value "enable_shell_commands" "true"
                 log_info "已启用系统命令执行"
             else
-                update_config_value "enable_shell_commands" "false"
                 log_info "已禁用系统命令执行"
             fi
             ;;
         2)
             if confirm "允许 ClawdBot 读写文件？" "n"; then
-                update_config_value "enable_file_access" "true"
                 log_info "已启用文件访问"
             else
-                update_config_value "enable_file_access" "false"
                 log_info "已禁用文件访问"
             fi
             ;;
         3)
             if confirm "允许 ClawdBot 浏览网络？" "y"; then
-                update_config_value "enable_web_browsing" "true"
                 log_info "已启用网络浏览"
             else
-                update_config_value "enable_web_browsing" "false"
                 log_info "已禁用网络浏览"
             fi
             ;;
         4)
             if confirm "启用沙箱模式？(推荐)" "y"; then
-                update_config_value "sandbox_mode" "true"
                 log_info "已启用沙箱模式"
             else
-                update_config_value "sandbox_mode" "false"
                 log_warn "已禁用沙箱模式，请注意安全风险"
             fi
             ;;
@@ -1730,27 +1632,21 @@ config_whitelist() {
     print_divider
     echo ""
     
-    echo -e "${CYAN}添加允许访问的目录路径 (每行一个，空行结束):${NC}"
+    if ! check_clawdbot_installed; then
+        log_error "ClawdBot 未安装"
+        press_enter
+        return
+    fi
+    
+    echo -e "${CYAN}使用 clawdbot 命令配置白名单:${NC}"
+    echo ""
+    echo "  clawdbot config set security.allowed_paths '/path/to/dir1,/path/to/dir2'"
     echo ""
     
-    paths=""
-    while IFS= read -r line; do
-        [ -z "$line" ] && break
-        paths+="    - \"$line\"\n"
-    done
+    read -p "$(echo -e "${YELLOW}输入允许访问的目录 (逗号分隔): ${NC}")" paths
     
     if [ -n "$paths" ]; then
-        backup_config
-        
-        # 添加白名单到配置
-        cat >> "$CONFIG_FILE" << EOF
-
-# 白名单配置
-whitelist:
-  directories:
-$(echo -e "$paths")
-EOF
-        
+        clawdbot config set security.allowed_paths "$paths" 2>/dev/null
         log_info "白名单配置已保存"
     fi
 }
@@ -2084,8 +1980,8 @@ advanced_settings() {
             ;;
         4)
             if confirm "确定要重置所有配置吗？这将删除当前配置" "n"; then
-                backup_config
-                rm -f "$CONFIG_FILE" "$CLAWDBOT_ENV"
+                rm -f "$CLAWDBOT_ENV"
+                rm -rf "$CONFIG_DIR/clawdbot.json" 2>/dev/null
                 log_info "配置已重置，请重新运行安装脚本"
             fi
             ;;
@@ -2141,12 +2037,12 @@ restore_config() {
     
     local i=1
     local backups=()
-    for file in "$BACKUP_DIR"/*.yaml; do
+    for file in "$BACKUP_DIR"/*.bak; do
         if [ -f "$file" ]; then
             backups+=("$file")
             local filename=$(basename "$file")
             local date_str=$(echo "$filename" | grep -oE '[0-9]{8}_[0-9]{6}')
-            echo "  [$i] $date_str"
+            echo "  [$i] $date_str - $filename"
             ((i++))
         fi
     done
@@ -2156,8 +2052,9 @@ restore_config() {
     
     if [ -n "$choice" ] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$i" ]; then
         local selected_backup="${backups[$((choice-1))]}"
-        cp "$selected_backup" "$CONFIG_FILE"
-        log_info "配置已从备份恢复"
+        cp "$selected_backup" "$CLAWDBOT_ENV"
+        source "$CLAWDBOT_ENV"
+        log_info "环境配置已从备份恢复"
     else
         log_error "无效选择"
     fi
@@ -2173,15 +2070,38 @@ view_config() {
     print_divider
     echo ""
     
-    if [ -f "$CONFIG_FILE" ]; then
-        # 语法高亮显示 (如果有 bat)
+    # 显示环境变量配置
+    echo -e "${CYAN}环境变量配置 ($CLAWDBOT_ENV):${NC}"
+    echo ""
+    if [ -f "$CLAWDBOT_ENV" ]; then
         if command -v bat &> /dev/null; then
-            bat --style=numbers --language=yaml "$CONFIG_FILE"
+            bat --style=numbers --language=bash "$CLAWDBOT_ENV"
         else
-            cat -n "$CONFIG_FILE"
+            cat -n "$CLAWDBOT_ENV"
         fi
     else
-        log_error "配置文件不存在"
+        echo -e "  ${GRAY}(未配置)${NC}"
+    fi
+    
+    echo ""
+    print_divider
+    echo ""
+    
+    # 显示 ClawdBot 配置
+    if check_clawdbot_installed; then
+        echo -e "${CYAN}ClawdBot 配置:${NC}"
+        echo ""
+        clawdbot config list 2>/dev/null || echo -e "  ${GRAY}(无法获取)${NC}"
+        echo ""
+        
+        echo -e "${CYAN}已配置渠道:${NC}"
+        echo ""
+        clawdbot channels list 2>/dev/null || echo -e "  ${GRAY}(无渠道)${NC}"
+        echo ""
+        
+        echo -e "${CYAN}当前模型:${NC}"
+        echo ""
+        clawdbot models status 2>/dev/null || echo -e "  ${GRAY}(未配置)${NC}"
     fi
     
     echo ""
