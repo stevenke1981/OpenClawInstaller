@@ -25,6 +25,7 @@ BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
+GRAY='\033[0;90m'
 NC='\033[0m' # 无颜色
 
 # ================================ 配置变量 ================================
@@ -315,6 +316,7 @@ configure_clawdbot_model() {
     log_step "配置 ClawdBot AI 模型..."
     
     local env_file="$HOME/.clawdbot/env"
+    local clawdbot_json="$HOME/.clawdbot/clawdbot.json"
     
     # 创建环境变量文件
     cat > "$env_file" << EOF
@@ -359,24 +361,36 @@ EOF
     # 设置默认模型
     if check_command clawdbot; then
         local clawdbot_model=""
-        case "$AI_PROVIDER" in
-            anthropic)
-                clawdbot_model="anthropic/$AI_MODEL"
-                ;;
-            openai|groq|mistral)
-                clawdbot_model="openai/$AI_MODEL"
-                ;;
-            openrouter)
-                # OpenRouter 模型名已包含 provider 前缀
-                clawdbot_model="openrouter/$AI_MODEL"
-                ;;
-            google)
-                clawdbot_model="google/$AI_MODEL"
-                ;;
-            ollama)
-                clawdbot_model="ollama/$AI_MODEL"
-                ;;
-        esac
+        local use_custom_provider=false
+        
+        # 如果使用自定义 BASE_URL，需要配置自定义 provider
+        if [ -n "$BASE_URL" ] && [ "$AI_PROVIDER" = "anthropic" ]; then
+            use_custom_provider=true
+            configure_custom_provider "$AI_PROVIDER" "$AI_KEY" "$AI_MODEL" "$BASE_URL" "$clawdbot_json"
+            clawdbot_model="anthropic-custom/$AI_MODEL"
+        elif [ -n "$BASE_URL" ] && [ "$AI_PROVIDER" = "openai" ]; then
+            use_custom_provider=true
+            configure_custom_provider "$AI_PROVIDER" "$AI_KEY" "$AI_MODEL" "$BASE_URL" "$clawdbot_json"
+            clawdbot_model="openai-custom/$AI_MODEL"
+        else
+            case "$AI_PROVIDER" in
+                anthropic)
+                    clawdbot_model="anthropic/$AI_MODEL"
+                    ;;
+                openai|groq|mistral)
+                    clawdbot_model="openai/$AI_MODEL"
+                    ;;
+                openrouter)
+                    clawdbot_model="openrouter/$AI_MODEL"
+                    ;;
+                google)
+                    clawdbot_model="google/$AI_MODEL"
+                    ;;
+                ollama)
+                    clawdbot_model="ollama/$AI_MODEL"
+                    ;;
+            esac
+        fi
         
         if [ -n "$clawdbot_model" ]; then
             # 加载环境变量
@@ -388,6 +402,141 @@ EOF
     
     # 添加到 shell 配置文件
     add_env_to_shell "$env_file"
+}
+
+# 配置自定义 provider（用于支持自定义 API 地址）
+configure_custom_provider() {
+    local provider="$1"
+    local api_key="$2"
+    local model="$3"
+    local base_url="$4"
+    local config_file="$5"
+    
+    log_step "配置自定义 Provider..."
+    
+    # 确定 API 类型
+    local api_type="openai-chat"
+    if [ "$provider" = "anthropic" ]; then
+        api_type="anthropic-messages"
+    fi
+    local provider_id="${provider}-custom"
+    
+    # 读取现有配置或创建新配置
+    local config_json="{}"
+    if [ -f "$config_file" ]; then
+        config_json=$(cat "$config_file")
+    fi
+    
+    # 使用 node 或 python 来处理 JSON
+    if command -v node &> /dev/null; then
+        node -e "
+const fs = require('fs');
+let config = {};
+try {
+    config = JSON.parse(fs.readFileSync('$config_file', 'utf8'));
+} catch (e) {
+    config = {};
+}
+
+// 确保 models.providers 结构存在
+if (!config.models) config.models = {};
+if (!config.models.providers) config.models.providers = {};
+
+// 清理旧的自定义 provider（避免累积）
+delete config.models.providers['anthropic-custom'];
+delete config.models.providers['openai-custom'];
+
+// 清理旧的错误配置模型（如 openai/claude-* 等）
+if (config.models.configured) {
+    config.models.configured = config.models.configured.filter(m => {
+        // 保留正确的配置，删除错误的如 openai/claude-*
+        if (m.startsWith('openai/claude')) return false;
+        if (m.startsWith('openrouter/claude') && !m.includes('openrouter.ai')) return false;
+        return true;
+    });
+}
+
+// 清理旧的别名
+if (config.models.aliases) {
+    delete config.models.aliases['claude-custom'];
+}
+
+// 添加自定义 provider
+config.models.providers['$provider_id'] = {
+    baseUrl: '$base_url',
+    apiKey: '$api_key',
+    models: [
+        {
+            id: '$model',
+            name: '$model',
+            api: '$api_type',
+            input: ['text'],
+            contextWindow: 200000,
+            maxTokens: 8192
+        }
+    ]
+};
+
+fs.writeFileSync('$config_file', JSON.stringify(config, null, 2));
+console.log('Custom provider configured: $provider_id');
+" 2>/dev/null && log_info "自定义 Provider 已配置: $provider_id"
+    elif command -v python3 &> /dev/null; then
+        python3 -c "
+import json
+import os
+
+config = {}
+config_file = '$config_file'
+if os.path.exists(config_file):
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+    except:
+        config = {}
+
+if 'models' not in config:
+    config['models'] = {}
+if 'providers' not in config['models']:
+    config['models']['providers'] = {}
+
+# 清理旧的自定义 provider（避免累积）
+config['models']['providers'].pop('anthropic-custom', None)
+config['models']['providers'].pop('openai-custom', None)
+
+# 清理旧的错误配置模型
+if 'configured' in config['models']:
+    config['models']['configured'] = [
+        m for m in config['models']['configured']
+        if not (m.startswith('openai/claude') or 
+                (m.startswith('openrouter/claude') and 'openrouter.ai' not in m))
+    ]
+
+# 清理旧的别名
+if 'aliases' in config['models']:
+    config['models']['aliases'].pop('claude-custom', None)
+
+config['models']['providers']['$provider_id'] = {
+    'baseUrl': '$base_url',
+    'apiKey': '$api_key',
+    'models': [
+        {
+            'id': '$model',
+            'name': '$model',
+            'api': '$api_type',
+            'input': ['text'],
+            'contextWindow': 200000,
+            'maxTokens': 8192
+        }
+    ]
+}
+
+with open(config_file, 'w') as f:
+    json.dump(config, f, indent=2)
+print('Custom provider configured: $provider_id')
+" 2>/dev/null && log_info "自定义 Provider 已配置: $provider_id"
+    else
+        log_warn "无法配置自定义 Provider（需要 node 或 python3）"
+    fi
 }
 
 # 添加环境变量到 shell 配置
@@ -522,7 +671,7 @@ setup_ai_provider() {
     echo "  6) ⚡ Groq (超快推理)"
     echo "  7) 🌬️ Mistral AI"
     echo ""
-    echo -e "${GRAY}提示: 所有提供商都支持自定义 API 地址，可接入代理服务${NC}"
+    echo -e "${GRAY}提示: Anthropic 支持自定义 API 地址（通过 clawdbot.json 配置自定义 Provider）${NC}"
     echo ""
     read -p "$(echo -e "${YELLOW}请选择 AI 提供商 [1-7] (默认: 1): ${NC}")" ai_choice
     ai_choice=${ai_choice:-1}
@@ -536,19 +685,21 @@ setup_ai_provider() {
             echo ""
             read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" BASE_URL
             echo ""
             echo "选择模型:"
-            echo "  1) claude-sonnet-4-20250514 (推荐)"
-            echo "  2) claude-opus-4-20250514 (最强)"
-            echo "  3) claude-3-5-haiku-20241022 (快速)"
-            echo "  4) 自定义模型名称"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo "  1) claude-sonnet-4-5-20250929 (推荐)"
+            echo "  2) claude-opus-4-5-20251101 (最强)"
+            echo "  3) claude-haiku-4-5-20251001 (快速)"
+            echo "  4) claude-sonnet-4-20250514 (上一代)"
+            echo "  5) 自定义模型名称"
+            read -p "$(echo -e "${YELLOW}选择模型 [1-5] (默认: 1): ${NC}")" model_choice
             case $model_choice in
-                2) AI_MODEL="claude-opus-4-20250514" ;;
-                3) AI_MODEL="claude-3-5-haiku-20241022" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
-                *) AI_MODEL="claude-sonnet-4-20250514" ;;
+                2) AI_MODEL="claude-opus-4-5-20251101" ;;
+                3) AI_MODEL="claude-haiku-4-5-20251001" ;;
+                4) AI_MODEL="claude-sonnet-4-20250514" ;;
+                5) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                *) AI_MODEL="claude-sonnet-4-5-20250929" ;;
             esac
             ;;
         2)
@@ -559,7 +710,7 @@ setup_ai_provider() {
             echo ""
             read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" BASE_URL
             echo ""
             echo "选择模型:"
             echo "  1) gpt-4o (推荐)"
@@ -718,123 +869,61 @@ test_api_connection() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    local test_url=""
     local test_passed=false
     local max_retries=3
     local retry_count=0
     
+    # 确保环境变量已加载
+    local env_file="$HOME/.clawdbot/env"
+    [ -f "$env_file" ] && source "$env_file"
+    
+    if ! check_command clawdbot; then
+        echo -e "${YELLOW}ClawdBot 未安装，跳过测试${NC}"
+        return 0
+    fi
+    
+    # 显示当前模型配置
+    echo -e "${CYAN}当前模型配置:${NC}"
+    clawdbot models status 2>&1 | grep -E "Default|Auth|effective" | head -5
+    echo ""
+    
     while [ "$test_passed" = false ] && [ $retry_count -lt $max_retries ]; do
-        echo -e "${YELLOW}正在测试 API 连接...${NC}"
+        echo -e "${YELLOW}运行 clawdbot agent --local 测试...${NC}"
         echo ""
         
-        # 确定测试 URL
-        case "$AI_PROVIDER" in
-            anthropic)
-                test_url="https://api.anthropic.com/v1/messages"
-                # Anthropic 使用不同的 API 格式
-                RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
-                    -H "Content-Type: application/json" \
-                    -H "x-api-key: $AI_KEY" \
-                    -H "anthropic-version: 2023-06-01" \
-                    -d "{
-                        \"model\": \"$AI_MODEL\",
-                        \"max_tokens\": 50,
-                        \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]
-                    }" 2>/dev/null)
-                ;;
-            google)
-                test_url="https://generativelanguage.googleapis.com/v1beta/models/$AI_MODEL:generateContent?key=$AI_KEY"
-                RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
-                    -H "Content-Type: application/json" \
-                    -d "{
-                        \"contents\": [{\"parts\":[{\"text\": \"Say OK\"}]}]
-                    }" 2>/dev/null)
-                ;;
-            *)
-                # OpenAI 兼容格式 (openai, openai-compatible, ollama, openrouter, groq, mistral)
-                if [ -n "$BASE_URL" ]; then
-                    test_url="${BASE_URL}/chat/completions"
-                else
-                    test_url="https://api.openai.com/v1/chat/completions"
-                fi
-                
-                RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
-                    -H "Content-Type: application/json" \
-                    -H "Authorization: Bearer $AI_KEY" \
-                    -d "{
-                        \"model\": \"$AI_MODEL\",
-                        \"messages\": [{\"role\": \"user\", \"content\": \"请只回复: 连接测试成功\"}],
-                        \"max_tokens\": 50
-                    }" 2>/dev/null)
-                ;;
-        esac
+        # 使用 clawdbot agent --local 测试
+        local result
+        result=$(clawdbot agent --local --to "+1234567890" --message "回复 OK" 2>&1)
+        local exit_code=$?
         
-        # 提取 HTTP 状态码和响应体
-        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-        RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
-        
-        # 检查响应
-        if [ "$HTTP_CODE" = "200" ]; then
+        if [ $exit_code -eq 0 ] && ! echo "$result" | grep -qiE "error|failed|401|403|Unknown model"; then
             test_passed=true
-            echo -e "${GREEN}✓ API 连接测试成功！${NC}"
+            echo -e "${GREEN}✓ ClawdBot AI 测试成功！${NC}"
             echo ""
-            
-            # 尝试解析并显示响应
-            if command -v python3 &> /dev/null; then
-                AI_RESPONSE=$(echo "$RESPONSE_BODY" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    if 'choices' in d:
-        print(d['choices'][0].get('message', {}).get('content', ''))
-    elif 'content' in d:
-        print(d['content'][0].get('text', ''))
-    elif 'candidates' in d:
-        print(d['candidates'][0]['content']['parts'][0]['text'])
-except:
-    print('')
-" 2>/dev/null)
-                if [ -n "$AI_RESPONSE" ]; then
-                    echo -e "  AI 响应: ${CYAN}$AI_RESPONSE${NC}"
-                fi
-            fi
-            echo ""
+            echo -e "  ${CYAN}AI 响应:${NC}"
+            echo "$result" | head -3 | sed 's/^/    /'
         else
             retry_count=$((retry_count + 1))
-            echo -e "${RED}✗ API 连接测试失败 (HTTP $HTTP_CODE)${NC}"
+            echo -e "${RED}✗ ClawdBot AI 测试失败${NC}"
             echo ""
-            
-            # 显示错误信息
-            if command -v python3 &> /dev/null; then
-                ERROR_MSG=$(echo "$RESPONSE_BODY" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    if 'error' in d:
-        err = d['error']
-        if isinstance(err, dict):
-            print(err.get('message', str(err)))
-        else:
-            print(str(err))
-except:
-    print('无法解析错误信息')
-" 2>/dev/null)
-                echo -e "  错误信息: ${RED}$ERROR_MSG${NC}"
-            fi
+            echo -e "  ${RED}错误:${NC} $(echo "$result" | head -2)"
             echo ""
             
             if [ $retry_count -lt $max_retries ]; then
-                echo -e "${YELLOW}请检查配置并重试 (剩余 $((max_retries - retry_count)) 次机会)${NC}"
+                echo -e "${YELLOW}剩余 $((max_retries - retry_count)) 次机会${NC}"
                 echo ""
-                echo "常见问题:"
-                echo "  1. API Key 是否正确"
-                echo "  2. API 地址是否正确"
-                echo "  3. 模型名称是否支持"
-                echo "  4. 网络是否可访问"
+                
+                # 提供修复建议
+                if echo "$result" | grep -q "Unknown model"; then
+                    echo -e "${YELLOW}提示: 模型不被识别，建议运行: clawdbot configure --section model${NC}"
+                elif echo "$result" | grep -q "401\|Incorrect API key"; then
+                    echo -e "${YELLOW}提示: API 配置可能不正确${NC}"
+                fi
                 echo ""
                 
                 if confirm "是否重新配置 AI Provider？" "y"; then
                     setup_ai_provider
+                    configure_clawdbot_model
                 else
                     echo -e "${YELLOW}继续使用当前配置...${NC}"
                     test_passed=true  # 允许跳过
@@ -844,15 +933,86 @@ except:
     done
     
     if [ "$test_passed" = false ]; then
-        echo -e "${RED}API 连接测试失败次数过多${NC}"
-        if confirm "是否仍然继续安装？(稍后可手动修改配置)" "y"; then
+        echo -e "${RED}API 连接测试失败${NC}"
+        echo ""
+        echo "建议运行以下命令手动配置:"
+        echo "  clawdbot configure --section model"
+        echo "  clawdbot doctor"
+        echo ""
+        if confirm "是否仍然继续安装？" "y"; then
             log_warn "跳过连接测试，继续安装..."
+            return 0
         else
             echo "安装已取消"
             exit 1
         fi
     fi
+    
+    return 0
 }
+
+# HTTP 直接测试 (备用，用于安装前验证 API Key)
+test_api_connection_http() {
+    echo ""
+    echo -e "${YELLOW}正在验证 API Key...${NC}"
+    echo ""
+    
+    local test_url=""
+    local RESPONSE=""
+    
+    case "$AI_PROVIDER" in
+        anthropic)
+            if [ -n "$BASE_URL" ]; then
+                test_url="${BASE_URL}/v1/chat/completions"
+                [[ "$BASE_URL" == */v1 ]] && test_url="${BASE_URL}/chat/completions"
+                RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
+                    -H "Content-Type: application/json" -H "Authorization: Bearer $AI_KEY" \
+                    -d "{\"model\": \"$AI_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"OK\"}], \"max_tokens\": 10}" 2>/dev/null)
+            else
+                test_url="https://api.anthropic.com/v1/messages"
+                RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
+                    -H "Content-Type: application/json" -H "x-api-key: $AI_KEY" -H "anthropic-version: 2023-06-01" \
+                    -d "{\"model\": \"$AI_MODEL\", \"max_tokens\": 10, \"messages\": [{\"role\": \"user\", \"content\": \"OK\"}]}" 2>/dev/null)
+            fi
+            ;;
+        google)
+            test_url="https://generativelanguage.googleapis.com/v1beta/models/$AI_MODEL:generateContent?key=$AI_KEY"
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
+                -H "Content-Type: application/json" -d "{\"contents\": [{\"parts\":[{\"text\": \"OK\"}]}]}" 2>/dev/null)
+            ;;
+        *)
+            test_url="${BASE_URL:-https://api.openai.com/v1}/chat/completions"
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
+                -H "Content-Type: application/json" -H "Authorization: Bearer $AI_KEY" \
+                -d "{\"model\": \"$AI_MODEL\", \"messages\": [{\"role\": \"user\", \"content\": \"OK\"}], \"max_tokens\": 10}" 2>/dev/null)
+            ;;
+    esac
+    
+    local HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    local RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+    
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo -e "${GREEN}✓ API Key 验证成功！${NC}"
+        return 0
+    else
+        echo -e "${RED}✗ API Key 验证失败 (HTTP $HTTP_CODE)${NC}"
+        if command -v python3 &> /dev/null; then
+            local error_msg=$(echo "$RESPONSE_BODY" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    if 'error' in d:
+        err = d['error']
+        if isinstance(err, dict): print(err.get('message', str(err))[:200])
+        else: print(str(err)[:200])
+except: print('')
+" 2>/dev/null)
+            [ -n "$error_msg" ] && echo -e "  错误: $error_msg"
+        fi
+        return 1
+    fi
+}
+
 
 # ================================ 身份配置 ================================
 

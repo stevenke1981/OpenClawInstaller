@@ -32,15 +32,16 @@
   <img src="photo/llm.png" alt="AI 模型配置" width="600">
 </p>
 
-- **Anthropic Claude** - Claude Opus 4 / Sonnet 4 / Haiku
-- **OpenAI GPT** - GPT-4o / GPT-4 Turbo / o1
-- **OpenAI Compatible** - 支持任何兼容 OpenAI API 的服务 (OneAPI/NewAPI/代理等)
+- **Anthropic Claude** - Claude Opus 4 / Sonnet 4 / Haiku *(支持自定义 API 地址)*
+- **OpenAI GPT** - GPT-4o / GPT-4 Turbo / o1 *(支持自定义 API 地址)*
 - **Google Gemini** - Gemini 2.0 Flash / 1.5 Pro
 - **Ollama** - 本地部署，无需 API Key
 - **OpenRouter** - 多模型网关，一个 Key 用遍所有模型
 - **Groq** - 超快推理，Llama 3.3 / Mixtral
 - **Mistral AI** - Mistral Large / Codestral
 - **Azure OpenAI** - 企业级 Azure 部署
+
+> 💡 **自定义 API 地址**: Anthropic Claude 支持通过 `clawdbot.json` 配置自定义 Provider，可接入 OneAPI/NewAPI/API 代理等服务。
 
 ### 📱 多渠道接入
 
@@ -274,7 +275,13 @@ clawdbot backup
 
 ## 📋 配置说明
 
-配置文件位置：`~/.clawdbot/config.yaml`
+ClawdBot 使用以下配置方式：
+
+- **环境变量**: `~/.clawdbot/env` - 存储 API Key 和 Base URL
+- **ClawdBot 配置**: `~/.clawdbot/clawdbot.json` - ClawdBot 内部配置
+- **命令行工具**: `clawdbot config set` / `clawdbot models set` 等
+
+> 注意：以下配置示例仅供参考，实际配置通过安装向导或 `config-menu.sh` 完成
 
 ### 完整配置示例
 
@@ -350,17 +357,10 @@ logging:
 
 ```
 ~/.clawdbot/
-├── config.yaml          # 主配置文件
-├── data/
-│   ├── memory/          # 记忆存储
-│   └── conversations/   # 对话历史
-├── skills/              # 自定义技能
-│   └── daily-report.md  # 示例技能
-├── logs/                # 日志文件
-│   ├── clawd.log
-│   ├── stdout.log
-│   └── stderr.log
-└── backups/             # 配置备份
+├── clawdbot.json        # ClawdBot 核心配置
+├── env                  # 环境变量 (API Key 等)
+├── backups/             # 配置备份
+└── logs/                # 日志文件 (由 ClawdBot 管理)
 ```
 
 ## 🛡️ 安全建议

@@ -188,7 +188,70 @@ test_ai_connection() {
     local base_url=$4
     
     echo ""
-    echo -e "${CYAN}━━━ 测试 AI API 连接 ━━━${NC}"
+    echo -e "${CYAN}━━━ 测试 AI 配置 ━━━${NC}"
+    echo ""
+    
+    if ! check_clawdbot_installed; then
+        log_error "ClawdBot 未安装"
+        return 1
+    fi
+    
+    # 确保环境变量已加载
+    [ -f "$CLAWDBOT_ENV" ] && source "$CLAWDBOT_ENV"
+    
+    # 显示当前模型配置
+    echo -e "${CYAN}当前模型配置:${NC}"
+    clawdbot models status 2>&1 | grep -E "Default|Auth|effective" | head -5
+    echo ""
+    
+    # 使用 clawdbot agent --local 测试
+    echo -e "${YELLOW}运行 clawdbot agent --local 测试...${NC}"
+    echo ""
+    
+    local result
+    result=$(clawdbot agent --local --to "+1234567890" --message "回复 OK" 2>&1)
+    local exit_code=$?
+    
+    echo ""
+    if [ $exit_code -eq 0 ] && ! echo "$result" | grep -qiE "error|failed|401|403|Unknown model"; then
+        log_info "ClawdBot AI 测试成功！"
+        echo ""
+        echo -e "  ${CYAN}AI 响应:${NC}"
+        echo "$result" | head -5 | sed 's/^/    /'
+        return 0
+    else
+        log_error "ClawdBot AI 测试失败"
+        echo ""
+        echo -e "  ${RED}错误信息:${NC}"
+        echo "$result" | head -5 | sed 's/^/    /'
+        echo ""
+        
+        # 提供修复建议
+        if echo "$result" | grep -q "Unknown model"; then
+            echo -e "${YELLOW}提示: 模型不被 ClawdBot 识别${NC}"
+            echo "  运行: clawdbot configure --section model"
+        elif echo "$result" | grep -q "401\|Incorrect API key"; then
+            echo -e "${YELLOW}提示: API Key 无效或 Base URL 配置不正确${NC}"
+            echo "  ClawdBot 可能不支持自定义 API 地址"
+            echo "  运行: clawdbot configure --section model"
+        fi
+        echo ""
+        echo "  其他诊断命令:"
+        echo "    clawdbot doctor"
+        echo "    clawdbot models status"
+        return 1
+    fi
+}
+
+# HTTP 直接测试 (备用)
+test_ai_connection_http() {
+    local provider=$1
+    local api_key=$2
+    local model=$3
+    local base_url=$4
+    
+    echo ""
+    echo -e "${CYAN}━━━ HTTP 直接测试 ━━━${NC}"
     echo ""
     
     echo -e "${YELLOW}正在测试 API 连接...${NC}"
@@ -199,45 +262,37 @@ test_ai_connection() {
     
     case "$provider" in
         anthropic)
-            test_url="https://api.anthropic.com/v1/messages"
-            response=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
-                -H "Content-Type: application/json" \
-                -H "x-api-key: $api_key" \
-                -H "anthropic-version: 2023-06-01" \
-                -d "{
-                    \"model\": \"$model\",
-                    \"max_tokens\": 50,
-                    \"messages\": [{\"role\": \"user\", \"content\": \"请回复: 连接成功\"}]
-                }" 2>/dev/null)
+            # 如果配置了自定义 base_url，使用 OpenAI 兼容格式
+            if [ -n "$base_url" ]; then
+                test_url="${base_url}/v1/chat/completions"
+                [[ "$base_url" == */v1 ]] && test_url="${base_url}/chat/completions"
+                
+                response=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
+                    -H "Content-Type: application/json" \
+                    -H "Authorization: Bearer $api_key" \
+                    -d "{\"model\": \"$model\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}], \"max_tokens\": 50}" 2>/dev/null)
+            else
+                test_url="https://api.anthropic.com/v1/messages"
+                response=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
+                    -H "Content-Type: application/json" -H "x-api-key: $api_key" -H "anthropic-version: 2023-06-01" \
+                    -d "{\"model\": \"$model\", \"max_tokens\": 50, \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}]}" 2>/dev/null)
+            fi
             ;;
         google)
             test_url="https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$api_key"
             response=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
                 -H "Content-Type: application/json" \
-                -d "{
-                    \"contents\": [{\"parts\":[{\"text\": \"请回复: 连接成功\"}]}]
-                }" 2>/dev/null)
+                -d "{\"contents\": [{\"parts\":[{\"text\": \"Say OK\"}]}]}" 2>/dev/null)
             ;;
         ollama)
             test_ollama_connection "$base_url" "$model"
             return $?
             ;;
         *)
-            # OpenAI 兼容格式
-            if [ -n "$base_url" ]; then
-                test_url="${base_url}/chat/completions"
-            else
-                test_url="https://api.openai.com/v1/chat/completions"
-            fi
-            
+            test_url="${base_url:-https://api.openai.com/v1}/chat/completions"
             response=$(curl -s -w "\n%{http_code}" -X POST "$test_url" \
-                -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $api_key" \
-                -d "{
-                    \"model\": \"$model\",
-                    \"messages\": [{\"role\": \"user\", \"content\": \"请回复: 连接成功\"}],
-                    \"max_tokens\": 50
-                }" 2>/dev/null)
+                -H "Content-Type: application/json" -H "Authorization: Bearer $api_key" \
+                -d "{\"model\": \"$model\", \"messages\": [{\"role\": \"user\", \"content\": \"Say OK\"}], \"max_tokens\": 50}" 2>/dev/null)
             ;;
     esac
     
@@ -248,30 +303,22 @@ test_ai_connection() {
     if [ "$http_code" = "200" ]; then
         log_info "API 连接测试成功！(HTTP $http_code)"
         
-        # 尝试解析响应
         if command -v python3 &> /dev/null; then
             local ai_response=$(echo "$response_body" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    if 'choices' in d:
-        print(d['choices'][0].get('message', {}).get('content', '')[:100])
-    elif 'content' in d:
-        print(d['content'][0].get('text', '')[:100])
-    elif 'candidates' in d:
-        print(d['candidates'][0]['content']['parts'][0]['text'][:100])
-except:
-    print('')
+    if 'choices' in d: print(d['choices'][0].get('message', {}).get('content', '')[:100])
+    elif 'content' in d: print(d['content'][0].get('text', '')[:100])
+    elif 'candidates' in d: print(d['candidates'][0]['content']['parts'][0]['text'][:100])
+except: print('')
 " 2>/dev/null)
-            if [ -n "$ai_response" ]; then
-                echo -e "  AI 响应: ${GREEN}$ai_response${NC}"
-            fi
+            [ -n "$ai_response" ] && echo -e "  AI 响应: ${GREEN}$ai_response${NC}"
         fi
         return 0
     else
         log_error "API 连接测试失败 (HTTP $http_code)"
         
-        # 显示错误信息
         if command -v python3 &> /dev/null; then
             local error_msg=$(echo "$response_body" | python3 -c "
 import sys, json
@@ -279,8 +326,7 @@ try:
     d = json.load(sys.stdin)
     if 'error' in d:
         err = d['error']
-        if isinstance(err, dict):
-            print(err.get('message', str(err))[:200])
+        if isinstance(err, dict): print(err.get('message', str(err))[:200])
         else:
             print(str(err)[:200])
 except:
@@ -638,7 +684,7 @@ config_ai_model() {
     echo ""
     
     echo -e "${CYAN}选择 AI 提供商:${NC}"
-    echo -e "${GRAY}提示: 所有提供商都支持自定义 API 地址，可接入代理服务${NC}"
+    echo -e "${GRAY}提示: Anthropic 支持自定义 API 地址（通过自定义 Provider 配置）${NC}"
     echo ""
     print_menu_item "1" "Anthropic Claude" "🟣"
     print_menu_item "2" "OpenAI GPT" "🟢"
@@ -679,8 +725,8 @@ config_anthropic() {
     echo ""
     
     # 获取当前 API Key
-    local current_key=$(get_config_value "api_key")
-    if [ -n "$current_key" ] && [ "$current_key" != "your-api-key-here" ]; then
+    local current_key=$(get_env_value "ANTHROPIC_API_KEY")
+    if [ -n "$current_key" ]; then
         local masked_key="${current_key:0:8}...${current_key: -4}"
         echo -e "当前 API Key: ${GRAY}$masked_key${NC}"
     fi
@@ -688,9 +734,9 @@ config_anthropic() {
     
     read -p "$(echo -e "${YELLOW}输入 API Key (留空保持不变): ${NC}")" api_key
     
-    # 如果没有输入新的 key，尝试从现有配置读取
+    # 如果没有输入新的 key，使用现有的
     if [ -z "$api_key" ]; then
-        api_key=$(get_env_value "ANTHROPIC_API_KEY")
+        api_key="$current_key"
         if [ -z "$api_key" ]; then
             log_error "API Key 不能为空"
             press_enter
@@ -699,15 +745,15 @@ config_anthropic() {
     fi
     
     echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
+    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" base_url
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
     echo ""
-    print_menu_item "1" "Claude Sonnet 4 (推荐)" "⭐"
-    print_menu_item "2" "Claude Opus 4 (最强)" "👑"
-    print_menu_item "3" "Claude 3.5 Haiku (快速)" "⚡"
-    print_menu_item "4" "Claude 3.5 Sonnet (上一代)" "📦"
+    print_menu_item "1" "Claude Sonnet 4.5 (推荐)" "⭐"
+    print_menu_item "2" "Claude Opus 4.5 (最强)" "👑"
+    print_menu_item "3" "Claude 4.5 Haiku (快速)" "⚡"
+    print_menu_item "4" "Claude 4 Sonnet (上一代)" "📦"
     print_menu_item "5" "自定义模型名称" "✏️"
     echo ""
     
@@ -715,12 +761,12 @@ config_anthropic() {
     model_choice=${model_choice:-1}
     
     case $model_choice in
-        1) model="claude-sonnet-4-20250514" ;;
-        2) model="claude-opus-4-20250514" ;;
-        3) model="claude-3-5-haiku-20241022" ;;
-        4) model="claude-3-5-sonnet-20241022" ;;
+        1) model="claude-sonnet-4-5-20250929" ;;
+        2) model="claude-opus-4-5-20251101" ;;
+        3) model="claude-haiku-4-5-20251001" ;;
+        4) model="claude-sonnet-4-20250514" ;;
         5) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" model ;;
-        *) model="claude-sonnet-4-20250514" ;;
+        *) model="claude-sonnet-4-5-20250929" ;;
     esac
     
     # 保存到 ClawdBot 环境变量配置
@@ -760,7 +806,7 @@ config_openai() {
     fi
     
     echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
+    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" base_url
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
@@ -871,11 +917,14 @@ config_openrouter() {
     
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
-    if [ -n "$api_key" ]; then
+    if [ -z "$api_key" ]; then
+        log_error "API Key 不能为空"
+        press_enter
+        return
     fi
     
     echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
+    local base_url=""  # ClawdBot 不支持自定义 API 地址
     base_url=${base_url:-"https://openrouter.ai/api/v1"}
     
     echo ""
@@ -931,11 +980,13 @@ config_google_gemini() {
     
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
-    if [ -n "$api_key" ]; then
-    fi
-    
+    if [ -z "$api_key" ]; then
+        log_error "API Key 不能为空"
+        press_enter
+        return
+    fi    
     echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
+    local base_url=""  # ClawdBot 不支持自定义 API 地址
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
@@ -1022,11 +1073,13 @@ config_groq() {
     
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
-    if [ -n "$api_key" ]; then
-    fi
-    
+    if [ -z "$api_key" ]; then
+        log_error "API Key 不能为空"
+        press_enter
+        return
+    fi    
     echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
+    local base_url=""  # ClawdBot 不支持自定义 API 地址
     base_url=${base_url:-"https://api.groq.com/openai/v1"}
     
     echo ""
@@ -1082,11 +1135,13 @@ config_mistral() {
     
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
-    if [ -n "$api_key" ]; then
-    fi
-    
+    if [ -z "$api_key" ]; then
+        log_error "API Key 不能为空"
+        press_enter
+        return
+    fi    
     echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" base_url
+    local base_url=""  # ClawdBot 不支持自定义 API 地址
     base_url=${base_url:-"https://api.mistral.ai/v1"}
     
     echo ""
@@ -1527,32 +1582,27 @@ config_identity() {
     print_divider
     echo ""
     
-    # 显示当前配置
-    local current_bot_name=$(get_config_value "bot_name")
-    local current_user_name=$(get_config_value "user_name")
-    local current_timezone=$(get_config_value "timezone")
+    if ! check_clawdbot_installed; then
+        log_error "ClawdBot 未安装"
+        press_enter
+        return
+    fi
     
+    # 显示当前配置
     echo -e "${CYAN}当前配置:${NC}"
-    echo "  助手名称: ${current_bot_name:-未设置}"
-    echo "  你的称呼: ${current_user_name:-未设置}"
-    echo "  时区: ${current_timezone:-未设置}"
+    clawdbot config get identity 2>/dev/null || echo "  (未配置)"
     echo ""
     print_divider
     echo ""
     
-    read -p "$(echo -e "${YELLOW}助手名称 (留空保持不变): ${NC}")" bot_name
-    read -p "$(echo -e "${YELLOW}如何称呼你 (留空保持不变): ${NC}")" user_name
-    read -p "$(echo -e "${YELLOW}时区 (如 Asia/Shanghai，留空保持不变): ${NC}")" timezone
+    read -p "$(echo -e "${YELLOW}助手名称: ${NC}")" bot_name
+    read -p "$(echo -e "${YELLOW}如何称呼你: ${NC}")" user_name
+    read -p "$(echo -e "${YELLOW}时区 (如 Asia/Shanghai): ${NC}")" timezone
     
-    echo ""
-    echo -e "${CYAN}设置助手个性 (输入多行文本，输入空行结束):${NC}"
-    personality=""
-    while IFS= read -r line; do
-        [ -z "$line" ] && break
-        personality+="$line\n"
-    done
-    
-    
+    # 使用 clawdbot 命令设置
+    [ -n "$bot_name" ] && clawdbot config set identity.name "$bot_name" 2>/dev/null
+    [ -n "$user_name" ] && clawdbot config set identity.user_name "$user_name" 2>/dev/null
+    [ -n "$timezone" ] && clawdbot config set identity.timezone "$timezone" 2>/dev/null
     
     echo ""
     log_info "身份配置已更新！"
@@ -1837,6 +1887,7 @@ save_clawdbot_ai_config() {
     ensure_clawdbot_init
     
     local env_file="$CLAWDBOT_ENV"
+    local config_file="$CLAWDBOT_JSON"
     
     # 创建或更新环境变量文件
     cat > "$env_file" << EOF
@@ -1880,24 +1931,36 @@ EOF
     # 设置默认模型
     if check_clawdbot_installed; then
         local clawdbot_model=""
-        case "$provider" in
-            anthropic)
-                clawdbot_model="anthropic/$model"
-                ;;
-            openai|groq|mistral)
-                clawdbot_model="openai/$model"
-                ;;
-            openrouter)
-                # OpenRouter 模型名已包含 provider 前缀
-                clawdbot_model="openrouter/$model"
-                ;;
-            google)
-                clawdbot_model="google/$model"
-                ;;
-            ollama)
-                clawdbot_model="ollama/$model"
-                ;;
-        esac
+        local use_custom_provider=false
+        
+        # 如果使用自定义 BASE_URL，需要配置自定义 provider
+        if [ -n "$base_url" ] && [ "$provider" = "anthropic" ]; then
+            use_custom_provider=true
+            configure_custom_provider "$provider" "$api_key" "$model" "$base_url" "$config_file"
+            clawdbot_model="anthropic-custom/$model"
+        elif [ -n "$base_url" ] && [ "$provider" = "openai" ]; then
+            use_custom_provider=true
+            configure_custom_provider "$provider" "$api_key" "$model" "$base_url" "$config_file"
+            clawdbot_model="openai-custom/$model"
+        else
+            case "$provider" in
+                anthropic)
+                    clawdbot_model="anthropic/$model"
+                    ;;
+                openai|groq|mistral)
+                    clawdbot_model="openai/$model"
+                    ;;
+                openrouter)
+                    clawdbot_model="openrouter/$model"
+                    ;;
+                google)
+                    clawdbot_model="google/$model"
+                    ;;
+                ollama)
+                    clawdbot_model="ollama/$model"
+                    ;;
+            esac
+        fi
         
         if [ -n "$clawdbot_model" ]; then
             # 加载环境变量并设置模型
@@ -1924,6 +1987,135 @@ EOF
     fi
     
     log_info "环境变量已保存到: $env_file"
+}
+
+# 配置自定义 provider（用于支持自定义 API 地址）
+configure_custom_provider() {
+    local provider="$1"
+    local api_key="$2"
+    local model="$3"
+    local base_url="$4"
+    local config_file="$5"
+    
+    log_info "配置自定义 Provider..."
+    
+    # 确定 API 类型
+    local api_type="openai-chat"
+    if [ "$provider" = "anthropic" ]; then
+        api_type="anthropic-messages"
+    fi
+    local provider_id="${provider}-custom"
+    
+    # 使用 node 或 python 来处理 JSON
+    if command -v node &> /dev/null; then
+        node -e "
+const fs = require('fs');
+let config = {};
+try {
+    config = JSON.parse(fs.readFileSync('$config_file', 'utf8'));
+} catch (e) {
+    config = {};
+}
+
+// 确保 models.providers 结构存在
+if (!config.models) config.models = {};
+if (!config.models.providers) config.models.providers = {};
+
+// 清理旧的自定义 provider（避免累积）
+delete config.models.providers['anthropic-custom'];
+delete config.models.providers['openai-custom'];
+
+// 清理旧的错误配置模型（如 openai/claude-* 等）
+if (config.models.configured) {
+    config.models.configured = config.models.configured.filter(m => {
+        // 保留正确的配置，删除错误的如 openai/claude-*
+        if (m.startsWith('openai/claude')) return false;
+        if (m.startsWith('openrouter/claude') && !m.includes('openrouter.ai')) return false;
+        return true;
+    });
+}
+
+// 清理旧的别名
+if (config.models.aliases) {
+    delete config.models.aliases['claude-custom'];
+}
+
+// 添加自定义 provider
+config.models.providers['$provider_id'] = {
+    baseUrl: '$base_url',
+    apiKey: '$api_key',
+    models: [
+        {
+            id: '$model',
+            name: '$model',
+            api: '$api_type',
+            input: ['text'],
+            contextWindow: 200000,
+            maxTokens: 8192
+        }
+    ]
+};
+
+fs.writeFileSync('$config_file', JSON.stringify(config, null, 2));
+console.log('Custom provider configured: $provider_id');
+" 2>/dev/null && log_info "自定义 Provider 已配置: $provider_id"
+    elif command -v python3 &> /dev/null; then
+        python3 -c "
+import json
+import os
+
+config = {}
+config_file = '$config_file'
+if os.path.exists(config_file):
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+    except:
+        config = {}
+
+if 'models' not in config:
+    config['models'] = {}
+if 'providers' not in config['models']:
+    config['models']['providers'] = {}
+
+# 清理旧的自定义 provider（避免累积）
+config['models']['providers'].pop('anthropic-custom', None)
+config['models']['providers'].pop('openai-custom', None)
+
+# 清理旧的错误配置模型
+if 'configured' in config['models']:
+    config['models']['configured'] = [
+        m for m in config['models']['configured']
+        if not (m.startswith('openai/claude') or 
+                (m.startswith('openrouter/claude') and 'openrouter.ai' not in m))
+    ]
+
+# 清理旧的别名
+if 'aliases' in config['models']:
+    config['models']['aliases'].pop('claude-custom', None)
+
+config['models']['providers']['$provider_id'] = {
+    'baseUrl': '$base_url',
+    'apiKey': '$api_key',
+    'models': [
+        {
+            'id': '$model',
+            'name': '$model',
+            'api': '$api_type',
+            'input': ['text'],
+            'contextWindow': 200000,
+            'maxTokens': 8192
+        }
+    ]
+}
+
+with open(config_file, 'w') as f:
+    json.dump(config, f, indent=2)
+print('Custom provider configured: $provider_id')
+" 2>/dev/null && log_info "自定义 Provider 已配置: $provider_id"
+    else
+        log_warn "无法配置自定义 Provider（需要 node 或 python3）"
+    fi
 }
 
 # ================================ 高级设置 ================================
@@ -2171,22 +2363,63 @@ quick_test_ai() {
     print_divider
     echo ""
     
-    # 读取当前配置
-    local provider=$(get_config_value "provider")
-    local api_key=$(get_config_value "api_key")
-    local model=$(get_config_value "model")
-    local base_url=$(grep "^  base_url:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*base_url:[[:space:]]*//' | tr -d '"')
-    
-    if [ -z "$provider" ] || [ -z "$api_key" ] || [ "$api_key" = "your-api-key-here" ]; then
+    # 从环境变量文件读取配置
+    if [ ! -f "$CLAWDBOT_ENV" ]; then
         log_error "AI 模型尚未配置，请先完成配置"
         press_enter
         quick_test_menu
         return
     fi
     
+    source "$CLAWDBOT_ENV"
+    
+    local provider=""
+    local api_key=""
+    local base_url=""
+    local model=""
+    
+    # 确定 provider
+    if [ -n "$ANTHROPIC_API_KEY" ]; then
+        provider="anthropic"
+        api_key="$ANTHROPIC_API_KEY"
+        base_url="$ANTHROPIC_BASE_URL"
+    elif [ -n "$OPENAI_API_KEY" ]; then
+        provider="openai"
+        api_key="$OPENAI_API_KEY"
+        base_url="$OPENAI_BASE_URL"
+    elif [ -n "$GOOGLE_API_KEY" ]; then
+        provider="google"
+        api_key="$GOOGLE_API_KEY"
+        base_url="$GOOGLE_BASE_URL"
+    elif [ -n "$GROQ_API_KEY" ]; then
+        provider="groq"
+        api_key="$GROQ_API_KEY"
+        base_url="$GROQ_BASE_URL"
+    elif [ -n "$MISTRAL_API_KEY" ]; then
+        provider="mistral"
+        api_key="$MISTRAL_API_KEY"
+        base_url="$MISTRAL_BASE_URL"
+    elif [ -n "$OPENROUTER_API_KEY" ]; then
+        provider="openrouter"
+        api_key="$OPENROUTER_API_KEY"
+        base_url="$OPENROUTER_BASE_URL"
+    fi
+    
+    if [ -z "$provider" ] || [ -z "$api_key" ]; then
+        log_error "AI 模型尚未配置，请先完成配置"
+        press_enter
+        quick_test_menu
+        return
+    fi
+    
+    # 获取当前模型
+    if check_clawdbot_installed; then
+        model=$(clawdbot config get models.default 2>/dev/null | sed 's|.*/||')
+    fi
+    
     echo -e "当前配置:"
     echo -e "  提供商: ${WHITE}$provider${NC}"
-    echo -e "  模型: ${WHITE}$model${NC}"
+    echo -e "  模型: ${WHITE}${model:-未知}${NC}"
     [ -n "$base_url" ] && echo -e "  API 地址: ${WHITE}$base_url${NC}"
     
     test_ai_connection "$provider" "$api_key" "$model" "$base_url"
@@ -2203,19 +2436,17 @@ quick_test_telegram() {
     print_divider
     echo ""
     
-    # 读取 Telegram 配置
-    local token=$(grep "token:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*token:[[:space:]]*//' | tr -d '"')
-    local user_id=$(grep -A5 "telegram:" "$CONFIG_FILE" 2>/dev/null | grep -E "^\s*-\s*" | head -1 | sed 's/.*-[[:space:]]*//' | tr -d '"')
+    echo -e "${CYAN}请输入 Telegram Bot Token 和 User ID 进行测试:${NC}"
+    echo ""
+    
+    read -p "$(echo -e "${YELLOW}Bot Token: ${NC}")" token
+    read -p "$(echo -e "${YELLOW}User ID: ${NC}")" user_id
     
     if [ -z "$token" ]; then
-        log_error "Telegram 尚未配置，请先完成配置"
+        log_error "Token 不能为空"
         press_enter
         quick_test_menu
         return
-    fi
-    
-    if [ -z "$user_id" ]; then
-        read -p "$(echo -e "${YELLOW}输入你的 User ID: ${NC}")" user_id
     fi
     
     test_telegram_bot "$token" "$user_id"
@@ -2232,19 +2463,17 @@ quick_test_discord() {
     print_divider
     echo ""
     
-    # 读取 Discord 配置
-    local token=$(grep -A5 "discord:" "$CONFIG_FILE" 2>/dev/null | grep "token:" | head -1 | sed 's/.*token:[[:space:]]*//' | tr -d '"')
-    local channel_id=$(grep -A10 "discord:" "$CONFIG_FILE" 2>/dev/null | grep -E "^\s*-\s*" | head -1 | sed 's/.*-[[:space:]]*//' | tr -d '"')
+    echo -e "${CYAN}请输入 Discord Bot Token 和 Channel ID 进行测试:${NC}"
+    echo ""
+    
+    read -p "$(echo -e "${YELLOW}Bot Token: ${NC}")" token
+    read -p "$(echo -e "${YELLOW}Channel ID: ${NC}")" channel_id
     
     if [ -z "$token" ]; then
-        log_error "Discord 尚未配置，请先完成配置"
+        log_error "Token 不能为空"
         press_enter
         quick_test_menu
         return
-    fi
-    
-    if [ -z "$channel_id" ]; then
-        read -p "$(echo -e "${YELLOW}输入频道 ID: ${NC}")" channel_id
     fi
     
     test_discord_bot "$token" "$channel_id"
@@ -2261,11 +2490,13 @@ quick_test_slack() {
     print_divider
     echo ""
     
-    # 读取 Slack 配置
-    local bot_token=$(grep "bot_token:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*bot_token:[[:space:]]*//' | tr -d '"')
+    echo -e "${CYAN}请输入 Slack Bot Token 进行测试:${NC}"
+    echo ""
+    
+    read -p "$(echo -e "${YELLOW}Bot Token (xoxb-...): ${NC}")" bot_token
     
     if [ -z "$bot_token" ]; then
-        log_error "Slack 尚未配置，请先完成配置"
+        log_error "Token 不能为空"
         press_enter
         quick_test_menu
         return
@@ -2285,15 +2516,15 @@ quick_test_ollama() {
     print_divider
     echo ""
     
-    local provider=$(get_config_value "provider")
-    local base_url=$(grep "^  base_url:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*base_url:[[:space:]]*//' | tr -d '"')
-    local model=$(get_config_value "model")
+    # 从环境变量读取或使用默认值
+    local base_url="${OLLAMA_HOST:-http://localhost:11434}"
+    local model="llama3"
     
-    if [ "$provider" != "ollama" ]; then
-        echo -e "${YELLOW}当前未配置 Ollama，使用默认地址测试${NC}"
-        base_url="http://localhost:11434"
-        model="llama3"
-    fi
+    read -p "$(echo -e "${YELLOW}Ollama 地址 (默认: $base_url): ${NC}")" input_url
+    [ -n "$input_url" ] && base_url="$input_url"
+    
+    read -p "$(echo -e "${YELLOW}模型名称 (默认: $model): ${NC}")" input_model
+    [ -n "$input_model" ] && model="$input_model"
     
     test_ollama_connection "$base_url" "$model"
     
@@ -2354,11 +2585,31 @@ run_all_tests() {
     local total_tests=0
     local passed_tests=0
     
-    # 测试 AI
-    local provider=$(get_config_value "provider")
-    local api_key=$(get_config_value "api_key")
-    local model=$(get_config_value "model")
-    local base_url=$(grep "^  base_url:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*base_url:[[:space:]]*//' | tr -d '"')
+    # 从环境变量读取 AI 配置
+    [ -f "$CLAWDBOT_ENV" ] && source "$CLAWDBOT_ENV"
+    
+    local provider=""
+    local api_key=""
+    local base_url=""
+    local model=""
+    
+    if [ -n "$ANTHROPIC_API_KEY" ]; then
+        provider="anthropic"
+        api_key="$ANTHROPIC_API_KEY"
+        base_url="$ANTHROPIC_BASE_URL"
+    elif [ -n "$OPENAI_API_KEY" ]; then
+        provider="openai"
+        api_key="$OPENAI_API_KEY"
+        base_url="$OPENAI_BASE_URL"
+    elif [ -n "$GOOGLE_API_KEY" ]; then
+        provider="google"
+        api_key="$GOOGLE_API_KEY"
+    fi
+    
+    # 获取当前模型
+    if check_clawdbot_installed; then
+        model=$(clawdbot config get models.default 2>/dev/null | sed 's|.*/||')
+    fi
     
     if [ -n "$provider" ] && [ -n "$api_key" ] && [ "$api_key" != "your-api-key-here" ]; then
         total_tests=$((total_tests + 1))
@@ -2395,50 +2646,12 @@ run_all_tests() {
         echo ""
     fi
     
-    # 测试 Telegram
-    local tg_token=$(grep "token:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*token:[[:space:]]*//' | tr -d '"')
-    if [ -n "$tg_token" ] && [[ "$tg_token" == *":"* ]]; then
-        total_tests=$((total_tests + 1))
-        echo -e "${CYAN}[测试 $total_tests] Telegram 机器人${NC}"
-        local bot_info=$(curl -s "https://api.telegram.org/bot${tg_token}/getMe" 2>/dev/null)
-        if echo "$bot_info" | grep -q '"ok":true'; then
-            log_info "Telegram Bot 验证成功"
-            passed_tests=$((passed_tests + 1))
-        else
-            log_error "Telegram Bot 验证失败"
-        fi
-        echo ""
-    fi
-    
-    # 测试 Discord
-    local dc_token=$(grep -A5 "discord:" "$CONFIG_FILE" 2>/dev/null | grep "token:" | head -1 | sed 's/.*token:[[:space:]]*//' | tr -d '"')
-    if [ -n "$dc_token" ]; then
-        total_tests=$((total_tests + 1))
-        echo -e "${CYAN}[测试 $total_tests] Discord 机器人${NC}"
-        local bot_info=$(curl -s "https://discord.com/api/v10/users/@me" -H "Authorization: Bot $dc_token" 2>/dev/null)
-        if echo "$bot_info" | grep -q '"id"'; then
-            log_info "Discord Bot 验证成功"
-            passed_tests=$((passed_tests + 1))
-        else
-            log_error "Discord Bot 验证失败"
-        fi
-        echo ""
-    fi
-    
-    # 测试 Slack
-    local slack_token=$(grep "bot_token:" "$CONFIG_FILE" 2>/dev/null | head -1 | sed 's/.*bot_token:[[:space:]]*//' | tr -d '"')
-    if [ -n "$slack_token" ]; then
-        total_tests=$((total_tests + 1))
-        echo -e "${CYAN}[测试 $total_tests] Slack 机器人${NC}"
-        local auth_result=$(curl -s "https://slack.com/api/auth.test" -H "Authorization: Bearer $slack_token" 2>/dev/null)
-        if echo "$auth_result" | grep -q '"ok":true'; then
-            log_info "Slack 验证成功"
-            passed_tests=$((passed_tests + 1))
-        else
-            log_error "Slack 验证失败"
-        fi
-        echo ""
-    fi
+    # 渠道测试提示
+    echo ""
+    echo -e "${CYAN}渠道测试:${NC}"
+    echo -e "  使用 ${WHITE}快速测试${NC} 菜单手动测试各个渠道"
+    echo -e "  或运行 ${WHITE}clawdbot channels list${NC} 查看已配置渠道"
+    echo ""
     
     # 汇总结果
     echo ""
