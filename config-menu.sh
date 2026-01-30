@@ -1895,9 +1895,9 @@ config_discord() {
                 log_warn "Discord 渠道可能已存在或配置失败"
             fi
             
-            # 设置 groupPolicy 为 mention（只响应 @ 机器人的消息）
+            # 设置 groupPolicy 为 open（只响应 @ 机器人的消息）
             echo -e "${YELLOW}设置消息响应策略...${NC}"
-            clawdbot config set channels.discord.groupPolicy mention 2>/dev/null || true
+            clawdbot config set channels.discord.groupPolicy open 2>/dev/null || true
             log_info "已设置为: 响应 @机器人 的消息"
             
             echo ""
