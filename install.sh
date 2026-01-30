@@ -17,6 +17,16 @@
 
 set -e
 
+# ================================ TTY 检测 ================================
+# 当通过 curl | bash 运行时，stdin 是管道，需要从 /dev/tty 读取用户输入
+if [ -t 0 ]; then
+    # stdin 是终端
+    TTY_INPUT="/dev/stdin"
+else
+    # stdin 是管道，使用 /dev/tty
+    TTY_INPUT="/dev/tty"
+fi
+
 # ================================ 颜色定义 ================================
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -84,6 +94,14 @@ spinner() {
     printf "    \b\b\b\b"
 }
 
+# 从 TTY 读取用户输入（支持 curl | bash 模式）
+read_input() {
+    local prompt="$1"
+    local var_name="$2"
+    echo -en "$prompt"
+    read $var_name < "$TTY_INPUT"
+}
+
 confirm() {
     local message="$1"
     local default="${2:-y}"
@@ -94,7 +112,8 @@ confirm() {
         local prompt="[y/N]"
     fi
     
-    read -p "$(echo -e "${YELLOW}$message $prompt: ${NC}")" response
+    echo -en "${YELLOW}$message $prompt: ${NC}"
+    read response < "$TTY_INPUT"
     response=${response:-$default}
     
     case "$response" in
@@ -693,7 +712,7 @@ setup_ai_provider() {
     echo ""
     echo -e "${GRAY}提示: Anthropic 支持自定义 API 地址（通过 clawdbot.json 配置自定义 Provider）${NC}"
     echo ""
-    read -p "$(echo -e "${YELLOW}请选择 AI 提供商 [1-7] (默认: 1): ${NC}")" ai_choice
+    echo -en "${YELLOW}请选择 AI 提供商 [1-7] (默认: 1): ${NC}"; read ai_choice < "$TTY_INPUT"
     ai_choice=${ai_choice:-1}
     
     case $ai_choice in
@@ -703,9 +722,9 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 Anthropic Claude${NC}"
             echo -e "${GRAY}官方 API: https://console.anthropic.com/${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" BASE_URL
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}"; read BASE_URL < "$TTY_INPUT"
             echo ""
             echo "选择模型:"
             echo "  1) claude-sonnet-4-5-20250929 (推荐)"
@@ -713,12 +732,12 @@ setup_ai_provider() {
             echo "  3) claude-haiku-4-5-20251001 (快速)"
             echo "  4) claude-sonnet-4-20250514 (上一代)"
             echo "  5) 自定义模型名称"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-5] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-5] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="claude-opus-4-5-20251101" ;;
                 3) AI_MODEL="claude-haiku-4-5-20251001" ;;
                 4) AI_MODEL="claude-sonnet-4-20250514" ;;
-                5) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                5) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="claude-sonnet-4-5-20250929" ;;
             esac
             ;;
@@ -728,20 +747,20 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 OpenAI GPT${NC}"
             echo -e "${GRAY}官方 API: https://platform.openai.com/${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" BASE_URL
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}"; read BASE_URL < "$TTY_INPUT"
             echo ""
             echo "选择模型:"
             echo "  1) gpt-4o (推荐)"
             echo "  2) gpt-4o-mini (经济)"
             echo "  3) gpt-4-turbo"
             echo "  4) 自定义模型名称"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="gpt-4o-mini" ;;
                 3) AI_MODEL="gpt-4-turbo" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="gpt-4o" ;;
             esac
             ;;
@@ -751,7 +770,7 @@ setup_ai_provider() {
             echo ""
             echo -e "${CYAN}配置 Ollama 本地模型${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}Ollama 地址 (默认: http://localhost:11434): ${NC}")" BASE_URL
+            echo -en "${YELLOW}Ollama 地址 (默认: http://localhost:11434): ${NC}"; read BASE_URL < "$TTY_INPUT"
             BASE_URL=${BASE_URL:-"http://localhost:11434"}
             echo ""
             echo "选择模型:"
@@ -759,11 +778,11 @@ setup_ai_provider() {
             echo "  2) llama3:70b"
             echo "  3) mistral"
             echo "  4) 自定义"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="llama3:70b" ;;
                 3) AI_MODEL="mistral" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="llama3" ;;
             esac
             ;;
@@ -773,9 +792,9 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 OpenRouter${NC}"
             echo -e "${GRAY}获取 API Key: https://openrouter.ai/${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}"; read BASE_URL < "$TTY_INPUT"
             BASE_URL=${BASE_URL:-"https://openrouter.ai/api/v1"}
             echo ""
             echo "选择模型:"
@@ -783,11 +802,11 @@ setup_ai_provider() {
             echo "  2) openai/gpt-4o"
             echo "  3) google/gemini-pro-1.5"
             echo "  4) 自定义"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="openai/gpt-4o" ;;
                 3) AI_MODEL="google/gemini-pro-1.5" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="anthropic/claude-sonnet-4" ;;
             esac
             ;;
@@ -797,20 +816,20 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 Google Gemini${NC}"
             echo -e "${GRAY}获取 API Key: https://makersuite.google.com/app/apikey${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}"; read BASE_URL < "$TTY_INPUT"
             echo ""
             echo "选择模型:"
             echo "  1) gemini-2.0-flash (推荐)"
             echo "  2) gemini-1.5-pro"
             echo "  3) gemini-1.5-flash"
             echo "  4) 自定义"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="gemini-1.5-pro" ;;
                 3) AI_MODEL="gemini-1.5-flash" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="gemini-2.0-flash" ;;
             esac
             ;;
@@ -820,9 +839,9 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 Groq${NC}"
             echo -e "${GRAY}获取 API Key: https://console.groq.com/${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}"; read BASE_URL < "$TTY_INPUT"
             BASE_URL=${BASE_URL:-"https://api.groq.com/openai/v1"}
             echo ""
             echo "选择模型:"
@@ -830,11 +849,11 @@ setup_ai_provider() {
             echo "  2) llama-3.1-8b-instant"
             echo "  3) mixtral-8x7b-32768"
             echo "  4) 自定义"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="llama-3.1-8b-instant" ;;
                 3) AI_MODEL="mixtral-8x7b-32768" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="llama-3.3-70b-versatile" ;;
             esac
             ;;
@@ -844,9 +863,9 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 Mistral AI${NC}"
             echo -e "${GRAY}获取 API Key: https://console.mistral.ai/${NC}"
             echo ""
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}"; read BASE_URL < "$TTY_INPUT"
             BASE_URL=${BASE_URL:-"https://api.mistral.ai/v1"}
             echo ""
             echo "选择模型:"
@@ -854,11 +873,11 @@ setup_ai_provider() {
             echo "  2) mistral-small-latest"
             echo "  3) codestral-latest"
             echo "  4) 自定义"
-            read -p "$(echo -e "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}")" model_choice
+            echo -en "${YELLOW}选择模型 [1-4] (默认: 1): ${NC}"; read model_choice < "$TTY_INPUT"
             case $model_choice in
                 2) AI_MODEL="mistral-small-latest" ;;
                 3) AI_MODEL="codestral-latest" ;;
-                4) read -p "$(echo -e "${YELLOW}输入模型名称: ${NC}")" AI_MODEL ;;
+                4) echo -en "${YELLOW}输入模型名称: ${NC}"; read AI_MODEL < "$TTY_INPUT" ;;
                 *) AI_MODEL="mistral-large-latest" ;;
             esac
             ;;
@@ -867,8 +886,8 @@ setup_ai_provider() {
             AI_PROVIDER="anthropic"
             echo ""
             echo -e "${CYAN}配置 Anthropic Claude${NC}"
-            read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" AI_KEY
-            read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}")" BASE_URL
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
+            echo -en "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}"; read BASE_URL < "$TTY_INPUT"
             AI_MODEL="claude-sonnet-4-20250514"
             ;;
     esac
@@ -1043,13 +1062,13 @@ setup_identity() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
-    read -p "$(echo -e "${YELLOW}给你的 AI 助手起个名字 (默认: Clawd): ${NC}")" BOT_NAME
+    echo -en "${YELLOW}给你的 AI 助手起个名字 (默认: Clawd): ${NC}"; read BOT_NAME < "$TTY_INPUT"
     BOT_NAME=${BOT_NAME:-"Clawd"}
     
-    read -p "$(echo -e "${YELLOW}AI 如何称呼你 (默认: 主人): ${NC}")" USER_NAME
+    echo -en "${YELLOW}AI 如何称呼你 (默认: 主人): ${NC}"; read USER_NAME < "$TTY_INPUT"
     USER_NAME=${USER_NAME:-"主人"}
     
-    read -p "$(echo -e "${YELLOW}你的时区 (默认: Asia/Shanghai): ${NC}")" TIMEZONE
+    echo -en "${YELLOW}你的时区 (默认: Asia/Shanghai): ${NC}"; read TIMEZONE < "$TTY_INPUT"
     TIMEZONE=${TIMEZONE:-"Asia/Shanghai"}
     
     echo ""
