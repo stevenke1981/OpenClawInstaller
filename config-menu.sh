@@ -724,13 +724,16 @@ config_anthropic() {
     echo -e "${GRAY}官方 API: https://console.anthropic.com/${NC}"
     echo ""
     
+    echo ""
+    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" base_url
+    
+    echo ""
     # 获取当前 API Key
     local current_key=$(get_env_value "ANTHROPIC_API_KEY")
     if [ -n "$current_key" ]; then
         local masked_key="${current_key:0:8}...${current_key: -4}"
         echo -e "当前 API Key: ${GRAY}$masked_key${NC}"
     fi
-    echo ""
     
     read -p "$(echo -e "${YELLOW}输入 API Key (留空保持不变): ${NC}")" api_key
     
@@ -743,9 +746,6 @@ config_anthropic() {
             return
         fi
     fi
-    
-    echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" base_url
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"
@@ -797,6 +797,9 @@ config_openai() {
     echo -e "${GRAY}官方 API: https://platform.openai.com/${NC}"
     echo ""
     
+    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" base_url
+    
+    echo ""
     read -p "$(echo -e "${YELLOW}输入 API Key: ${NC}")" api_key
     
     if [ -z "$api_key" ]; then
@@ -804,9 +807,6 @@ config_openai() {
         press_enter
         return
     fi
-    
-    echo ""
-    read -p "$(echo -e "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}")" base_url
     
     echo ""
     echo -e "${CYAN}选择模型:${NC}"

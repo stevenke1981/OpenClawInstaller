@@ -722,9 +722,9 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 Anthropic Claude${NC}"
             echo -e "${GRAY}官方 API: https://console.anthropic.com/${NC}"
             echo ""
-            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
-            echo ""
             echo -en "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}"; read BASE_URL < "$TTY_INPUT"
+            echo ""
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
             echo "选择模型:"
             echo "  1) claude-sonnet-4-5-20250929 (推荐)"
@@ -747,9 +747,9 @@ setup_ai_provider() {
             echo -e "${CYAN}配置 OpenAI GPT${NC}"
             echo -e "${GRAY}官方 API: https://platform.openai.com/${NC}"
             echo ""
-            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
-            echo ""
             echo -en "${YELLOW}自定义 API 地址 (留空使用官方 API): ${NC}"; read BASE_URL < "$TTY_INPUT"
+            echo ""
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo ""
             echo "选择模型:"
             echo "  1) gpt-4o (推荐)"
@@ -886,8 +886,8 @@ setup_ai_provider() {
             AI_PROVIDER="anthropic"
             echo ""
             echo -e "${CYAN}配置 Anthropic Claude${NC}"
-            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             echo -en "${YELLOW}自定义 API 地址 (留空使用官方): ${NC}"; read BASE_URL < "$TTY_INPUT"
+            echo -en "${YELLOW}输入 API Key: ${NC}"; read AI_KEY < "$TTY_INPUT"
             AI_MODEL="claude-sonnet-4-20250514"
             ;;
     esac
@@ -1171,10 +1171,6 @@ print_success() {
     echo "  ClawdBot 配置: ~/.clawdbot/"
     echo "  环境变量配置: ~/.clawdbot/env"
     echo ""
-    echo -e "${CYAN}启动服务:${NC}"
-    echo "  # 加载环境变量后启动"
-    echo "  source ~/.clawdbot/env && clawdbot gateway"
-    echo ""
     echo -e "${CYAN}常用命令:${NC}"
     echo "  clawdbot gateway start   # 后台启动服务"
     echo "  clawdbot gateway stop    # 停止服务"
@@ -1186,6 +1182,65 @@ print_success() {
     echo -e "${PURPLE}📚 官方文档: https://clawd.bot/docs${NC}"
     echo -e "${PURPLE}💬 社区支持: https://github.com/$GITHUB_REPO/discussions${NC}"
     echo ""
+}
+
+# 启动 ClawdBot Gateway 服务
+start_clawdbot_service() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}           🚀 启动 ClawdBot 服务${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    # 加载环境变量
+    local env_file="$HOME/.clawdbot/env"
+    if [ -f "$env_file" ]; then
+        source "$env_file"
+        log_info "已加载环境变量"
+    fi
+    
+    # 检查是否已有服务在运行
+    if pgrep -f "clawdbot.*gateway" > /dev/null 2>&1; then
+        log_warn "ClawdBot Gateway 已在运行"
+        echo ""
+        if confirm "是否重启服务？" "y"; then
+            clawdbot gateway stop 2>/dev/null || true
+            pkill -f "clawdbot.*gateway" 2>/dev/null || true
+            sleep 2
+        else
+            return 0
+        fi
+    fi
+    
+    # 后台启动 Gateway
+    log_step "正在后台启动 Gateway..."
+    
+    if [ -f "$env_file" ]; then
+        nohup bash -c "source $env_file && clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+    else
+        nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+    fi
+    
+    sleep 3
+    
+    # 检查启动状态
+    if pgrep -f "clawdbot.*gateway" > /dev/null 2>&1; then
+        echo ""
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${GREEN}           ✓ ClawdBot Gateway 已启动！${NC}"
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  ${CYAN}日志文件:${NC} /tmp/clawdbot-gateway.log"
+        echo -e "  ${CYAN}查看日志:${NC} tail -f /tmp/clawdbot-gateway.log"
+        echo -e "  ${CYAN}停止服务:${NC} clawdbot gateway stop"
+        echo ""
+        log_info "ClawdBot 现在可以接收消息了！"
+    else
+        log_error "Gateway 启动失败"
+        echo ""
+        echo -e "${YELLOW}请查看日志: tail -f /tmp/clawdbot-gateway.log${NC}"
+        echo -e "${YELLOW}或手动启动: source ~/.clawdbot/env && clawdbot gateway${NC}"
+    fi
 }
 
 # 下载并运行配置菜单
@@ -1255,8 +1310,19 @@ main() {
     setup_daemon
     print_success
     
-    # 安装完成后自动运行配置菜单
-    if confirm "是否打开配置菜单进行详细配置？" "y"; then
+    # 询问是否启动服务
+    if confirm "是否现在启动 ClawdBot 服务？" "y"; then
+        start_clawdbot_service
+    else
+        echo ""
+        echo -e "${CYAN}稍后可以通过以下命令启动服务:${NC}"
+        echo "  source ~/.clawdbot/env && clawdbot gateway"
+        echo ""
+    fi
+    
+    # 询问是否打开配置菜单进行详细配置
+    echo ""
+    if confirm "是否打开配置菜单进行详细配置（渠道配置等）？" "n"; then
         run_config_menu
     else
         echo ""
@@ -1266,6 +1332,10 @@ main() {
         echo "  curl -fsSL $GITHUB_RAW_URL/config-menu.sh | bash"
         echo ""
     fi
+    
+    echo ""
+    echo -e "${GREEN}🦞 ClawdBot 安装完成！祝你使用愉快！${NC}"
+    echo ""
 }
 
 # 执行主函数
