@@ -1364,13 +1364,23 @@ start_clawdbot_service() {
         fi
     fi
     
-    # 后台启动 Gateway
+    # 后台启动 Gateway（使用 setsid 完全脱离终端）
     log_step "正在后台启动 Gateway..."
     
-    if [ -f "$env_file" ]; then
-        nohup bash -c "source $env_file && clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+    if command -v setsid &> /dev/null; then
+        if [ -f "$env_file" ]; then
+            setsid bash -c "source $env_file && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+        else
+            setsid clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+        fi
     else
-        nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+        # 备用方案：nohup + disown
+        if [ -f "$env_file" ]; then
+            nohup bash -c "source $env_file && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+        else
+            nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+        fi
+        disown 2>/dev/null || true
     fi
     
     sleep 3

@@ -166,7 +166,8 @@ restart_gateway_for_channel() {
     
     # 先尝试停止
     clawdbot gateway stop 2>/dev/null || true
-    sleep 1
+    pkill -f "clawdbot.*gateway" 2>/dev/null || true
+    sleep 2
     
     # 加载环境变量
     if [ -f "$CLAWDBOT_ENV" ]; then
@@ -174,14 +175,24 @@ restart_gateway_for_channel() {
         log_info "已加载环境变量: $CLAWDBOT_ENV"
     fi
     
-    # 后台启动 Gateway
+    # 后台启动 Gateway（使用 setsid 完全脱离终端）
     echo -e "${YELLOW}正在后台启动 Gateway...${NC}"
     
-    # 构建启动命令（包含环境变量）
-    if [ -f "$CLAWDBOT_ENV" ]; then
-        nohup bash -c "source $CLAWDBOT_ENV && clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+    # 使用 setsid 创建新会话，确保进程完全独立
+    if command -v setsid &> /dev/null; then
+        if [ -f "$CLAWDBOT_ENV" ]; then
+            setsid bash -c "source $CLAWDBOT_ENV && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+        else
+            setsid clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+        fi
     else
-        nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+        # 备用方案：nohup + disown
+        if [ -f "$CLAWDBOT_ENV" ]; then
+            nohup bash -c "source $CLAWDBOT_ENV && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+        else
+            nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+        fi
+        disown 2>/dev/null || true
     fi
     
     sleep 3
@@ -2564,11 +2575,21 @@ manage_service() {
                 
                 log_info "正在启动服务..."
                 
-                # 后台启动 Gateway（包含环境变量）
-                if [ -f "$CLAWDBOT_ENV" ]; then
-                    nohup bash -c "source $CLAWDBOT_ENV && clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+                # 后台启动 Gateway（使用 setsid 完全脱离终端）
+                if command -v setsid &> /dev/null; then
+                    if [ -f "$CLAWDBOT_ENV" ]; then
+                        setsid bash -c "source $CLAWDBOT_ENV && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+                    else
+                        setsid clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+                    fi
                 else
-                    nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+                    # 备用方案：nohup + disown
+                    if [ -f "$CLAWDBOT_ENV" ]; then
+                        nohup bash -c "source $CLAWDBOT_ENV && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+                    else
+                        nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+                    fi
+                    disown 2>/dev/null || true
                 fi
                 
                 sleep 3
@@ -2617,12 +2638,25 @@ manage_service() {
                 sleep 2
                 ensure_clawdbot_init
                 
-                # 加载环境变量并启动
+                # 加载环境变量
                 if [ -f "$CLAWDBOT_ENV" ]; then
                     source "$CLAWDBOT_ENV"
-                    nohup bash -c "source $CLAWDBOT_ENV && clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+                fi
+                
+                # 后台启动 Gateway（使用 setsid 完全脱离终端）
+                if command -v setsid &> /dev/null; then
+                    if [ -f "$CLAWDBOT_ENV" ]; then
+                        setsid bash -c "source $CLAWDBOT_ENV && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+                    else
+                        setsid clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+                    fi
                 else
-                    nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+                    if [ -f "$CLAWDBOT_ENV" ]; then
+                        nohup bash -c "source $CLAWDBOT_ENV && exec clawdbot gateway --port 18789" > /tmp/clawdbot-gateway.log 2>&1 &
+                    else
+                        nohup clawdbot gateway --port 18789 > /tmp/clawdbot-gateway.log 2>&1 &
+                    fi
+                    disown 2>/dev/null || true
                 fi
                 
                 sleep 3
