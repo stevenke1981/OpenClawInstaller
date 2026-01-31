@@ -171,7 +171,7 @@ restart_gateway_for_channel() {
     
     # 先运行 doctor --fix 确保配置有效
     echo -e "${YELLOW}检查配置...${NC}"
-    clawdbot doctor --fix --yes > /dev/null 2>&1 || true
+    yes | clawdbot doctor --fix > /dev/null 2>&1 || true
     
     # 加载环境变量
     if [ -f "$CLAWDBOT_ENV" ]; then
@@ -3217,14 +3217,13 @@ print('Feishu config saved successfully')
         echo ""
         echo -e "${YELLOW}启用飞书渠道...${NC}"
         
-        # 使用 --yes 参数自动确认修复
-        if clawdbot doctor --fix --yes 2>&1 | grep -v "^│" | grep -v "^├" | grep -v "^◇" | grep -v "Config invalid" | head -5; then
-            log_info "飞书渠道已启用"
-        else
-            # 尝试使用 plugins enable 命令
-            clawdbot plugins enable feishu 2>/dev/null || true
-            log_info "飞书渠道配置完成"
-        fi
+        # 先启用 feishu 插件
+        clawdbot plugins enable feishu > /dev/null 2>&1 || true
+        
+        # 使用 yes 管道自动确认修复
+        yes | clawdbot doctor --fix > /dev/null 2>&1 || true
+        
+        log_info "飞书渠道已启用"
         
         return 0
     else
