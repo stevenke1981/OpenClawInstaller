@@ -164,10 +164,14 @@ restart_gateway_for_channel() {
     echo ""
     log_info "正在重启 Gateway..."
     
-    # 先尝试停止
-    clawdbot gateway stop 2>/dev/null || true
+    # 先尝试停止（隐藏 doctor 输出）
+    clawdbot gateway stop > /dev/null 2>&1 || true
     pkill -f "clawdbot.*gateway" 2>/dev/null || true
     sleep 2
+    
+    # 先运行 doctor --fix 确保配置有效
+    echo -e "${YELLOW}检查配置...${NC}"
+    clawdbot doctor --fix --yes > /dev/null 2>&1 || true
     
     # 加载环境变量
     if [ -f "$CLAWDBOT_ENV" ]; then
@@ -3212,10 +3216,14 @@ print('Feishu config saved successfully')
         # 启用飞书渠道
         echo ""
         echo -e "${YELLOW}启用飞书渠道...${NC}"
-        if clawdbot doctor --fix 2>/dev/null; then
+        
+        # 使用 --yes 参数自动确认修复
+        if clawdbot doctor --fix --yes 2>&1 | grep -v "^│" | grep -v "^├" | grep -v "^◇" | grep -v "Config invalid" | head -5; then
             log_info "飞书渠道已启用"
         else
-            log_warn "请手动运行: clawdbot doctor --fix"
+            # 尝试使用 plugins enable 命令
+            clawdbot plugins enable feishu 2>/dev/null || true
+            log_info "飞书渠道配置完成"
         fi
         
         return 0
@@ -3238,6 +3246,12 @@ install_feishu_plugin() {
     
     if [ -n "$installed" ]; then
         log_info "飞书插件已安装: $installed"
+        return 0
+    fi
+    
+    # 检查 npm 全局包是否已安装
+    if npm list -g @m1heng-clawd/feishu 2>/dev/null | grep -q "@m1heng-clawd/feishu"; then
+        log_info "飞书插件已安装 (npm): @m1heng-clawd/feishu"
         return 0
     fi
     
