@@ -172,46 +172,7 @@ curl -fsSL https://raw.githubusercontent.com/miaoxworld/ClawdBotInstaller/main/c
 
 > ⚠️ **中转服务要求**: 如使用自定义 API 地址，中转服务必须支持 OpenAI 的 **Responses API** (`v1/responses` 路径)，而非仅支持传统的 Chat Completions API (`v1/chat/completions`)。部分老旧或功能不全的中转服务可能不支持此接口，请提前确认。
 
-#### Ollama 本地模型
-
-```bash
-# 1. 安装 Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# 2. 下载模型
-ollama pull llama3
-
-# 3. 在配置菜单中选择 Ollama
-# 输入服务地址：http://localhost:11434
-```
-
-#### Groq (超快推理)
-
-1. 访问 [Groq Console](https://console.groq.com/) 获取 API Key
-2. 在配置菜单中选择 Groq
-3. 输入 API Key
-4. 选择模型（推荐 llama-3.3-70b-versatile）
-
-#### Google Gemini
-
-1. 访问 [Google AI Studio](https://makersuite.google.com/app/apikey) 获取 API Key
-2. 在配置菜单中选择 Google Gemini
-3. 输入 API Key
-4. 选择模型（推荐 gemini-2.0-flash）
-
-#### OpenRouter (多模型网关)
-
-1. 访问 [OpenRouter](https://openrouter.ai/) 获取 API Key
-2. 在配置菜单中选择 OpenRouter
-3. 输入 API Key
-4. 选择模型（推荐 anthropic/claude-sonnet-4）
-
-#### Mistral AI
-
-1. 访问 [Mistral Console](https://console.mistral.ai/) 获取 API Key
-2. 在配置菜单中选择 Mistral AI
-3. 输入 API Key
-4. 选择模型（推荐 mistral-large-latest）
+> 💡 **其他模型**: 配置菜单还支持 Google Gemini、OpenRouter、Groq、Mistral AI、Ollama 等，按菜单提示操作即可。
 
 ### 配置 Telegram 机器人
 
@@ -224,14 +185,35 @@ ollama pull llama3
 
 ### 配置 Discord 机器人
 
+**第一步：创建 Discord 应用和机器人**
+
 1. 访问 [Discord Developer Portal](https://discord.com/developers/applications)
-2. 点击 "New Application" 创建应用
-3. 进入 "Bot" 页面，点击 "Add Bot"
-4. 复制 **Bot Token**
-5. 在 "OAuth2" → "URL Generator" 中生成邀请链接
-6. 邀请机器人到你的服务器
-7. 获取目标频道的 **Channel ID**（右键频道 → 复制 ID）
-8. 在配置菜单中输入以上信息
+2. 点击 "New Application" 创建新应用
+3. 进入应用后，点击左侧 "Bot" 菜单
+4. 点击 "Reset Token" 生成并复制 **Bot Token**
+5. ⚠️ **开启 "Message Content Intent"**（重要！否则无法读取消息内容）
+
+**第二步：邀请机器人到服务器**
+
+1. 点击左侧 "OAuth2" → "URL Generator"
+2. Scopes 勾选：`bot`
+3. Bot Permissions 至少勾选：
+   - View Channels（查看频道）
+   - Send Messages（发送消息）
+   - Read Message History（读取消息历史）
+4. 复制生成的 URL，在浏览器打开并选择服务器
+5. 确保机器人在目标频道有权限
+
+**第三步：获取频道 ID**
+
+1. 打开 Discord 客户端，进入 "用户设置" → "高级"
+2. 开启 "开发者模式"
+3. 右键点击你想让机器人响应的频道
+4. 点击 "复制频道 ID"
+
+**第四步：在配置菜单中配置**
+
+在配置菜单中选择 Discord，输入 Bot Token 和 Channel ID
 
 ### 配置飞书机器人
 
