@@ -1,5 +1,14 @@
 # 🦞 OpenClaw 一键部署工具
 
+Windows Install:
+
+
+右鍵點擊檔案，選擇「使用 PowerShell 執行」，或者在終端機中輸入 .\config-menu.ps1。
+
+注意：如果遇到權限問題，請先以系統管理員身分執行 PowerShell 並輸入 Set-ExecutionPolicy RemoteSigned。
+
+
+
 <p align="center">
   <img src="https://img.shields.io/badge/Version-1.0.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-green.svg" alt="Platform">
